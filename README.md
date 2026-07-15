@@ -9,21 +9,43 @@ A small PHP 7.0 API + [Webix.js](https://webix.com/) front end for browsing a di
 
 ## Setup
 
+The whole project folder is the document root — no `public/` subpath to configure. Drop it anywhere your web server serves from.
+
 1. Edit `config.php` and set `image_dir` to the absolute path of the directory containing your images. It currently holds a placeholder (`/var/data/images`).
-2. Point your web server's document root at `public/`.
-   - Apache: the included `public/.htaccess` handles rewriting.
+2. Point your web server's document root (or a subdirectory alias) at the project folder.
+   - Apache: the included `.htaccess` handles rewriting and blocks direct access to `config.php`, `src/`, `cache/`, and `bin/`.
    - nginx:
      ```
+     location ~ ^/(config\.php|src/|cache/|bin/) {
+         deny all;
+         return 403;
+     }
+
      location / {
          try_files $uri $uri/ /index.php?$query_string;
+     }
+
+     location ~ \.php$ {
+         # ... your fastcgi_pass / fastcgi_param SCRIPT_FILENAME setup
      }
      ```
 3. Open the site in a browser — the first request builds `cache/images.json` automatically.
 
+### Multiple image folders on one server
+
+Since each deployment is just this folder with its own `config.php`, serving several unrelated image directories (e.g. `/img/custa`, `/img/custb`) means copying the whole project once per directory, each with a different `image_dir`:
+
+```
+/var/www/html/custa/   (full copy of this project, image_dir = /img/custa)
+/var/www/html/custb/   (full copy of this project, image_dir = /img/custb)
+```
+
+Each copy is self-contained and works as a subdirectory of the same docroot without any extra web server config — the front controller detects its own base path from `SCRIPT_NAME`.
+
 ### Local dev
 
 ```
-php -S 0.0.0.0:8080 -t public
+php -S 0.0.0.0:8080
 ```
 
 If you don't have PHP installed locally, run the same command inside a `php:7.0-cli` Docker container with the project mounted in.

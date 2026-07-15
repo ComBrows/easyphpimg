@@ -1,5 +1,9 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
+
+    # Deny direct access to internal files — only index.php is a valid entry point.
+    RewriteRule ^(config\.php|src/|cache/|bin/) - [F,L,NC]
+
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^ index.php [L]

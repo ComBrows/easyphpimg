@@ -1,12 +1,12 @@
 <?php
 
-require __DIR__ . '/../src/autoload.php';
+require __DIR__ . '/src/autoload.php';
 
 use App\Cache;
 use App\Scanner;
 use App\Controllers\ImagesController;
 
-$config = require __DIR__ . '/../config.php';
+$config = require __DIR__ . '/config.php';
 
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
