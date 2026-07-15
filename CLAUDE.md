@@ -25,7 +25,7 @@ location / {
 }
 ```
 
-There is no build step, package manager, or test suite — it's plain PHP 7.0 (no Composer) and a static front end loading Webix from a CDN.
+There is no build step, package manager, or test suite — it's plain PHP 7.0 (no Composer) and a static front end loading Webix and Lodash from CDNs.
 
 ## Commands
 
@@ -67,3 +67,8 @@ Detail view is a Webix `window` (not `modalbox` — modalbox's positioning has a
 - There is no `centerOnScreen()` method on this Webix version despite it being a very findable-sounding API — centering has to be done manually via `win.setPosition((innerWidth - win.$width) / 2, (innerHeight - win.$height) / 2)`, called both after `show()` and on window resize.
 
 No separate thumbnail generation exists — `/api/images/{id}/raw` is used directly for both gallery thumbnails and the detail view's full image.
+
+**Client-side filtering/grouping/search is all in-memory, no server changes.** On load, `app.js` fetches every page from `/api/images` (200 at a time, the server's `max_page_size`) into a single `allImages` array before rendering anything — this is deliberate per the feature request ("all computing done in the browser"), not an oversight; there's no server-side date-filter or search endpoint. Until that fetch resolves, the static `#loadingScreen` div in `index.html` (blinking "Loading…", plain CSS `animation`, no Webix) is the only thing on screen; `app.js` removes it and only then calls `buildApp()`. A few Lodash-grouping/Webix gotchas worth knowing before touching this:
+- Year/month/day grouping (`buildSidebarTree`) uses `item.modified` (parsed once into `_year`/`_month`/`_day` via `withDateParts`, not recomputed per render) and `_.groupBy` + `_.sortBy(..., Number).reverse()` for newest-first ordering — plain `.sort()` on the string keys `_.groupBy` produces would sort lexically, not numerically.
+- The sidebar is a Webix `tree` with synthetic ids like `y-2026-m-7-d-15` encoding the filter; `filterFromTreeId` parses that back out. The `"all"` id resets `currentFilter` to `null`. Pagination (`loadPage`) always re-applies `currentFilter` against `allImages` before slicing — there's no server round-trip when the filter or page changes, only when opening a detail view or fetching a raw image.
+- The filename search box's suggest dropdown (`webix.ui({view:"suggest", ...})`) is **not** wired to the input via a `master`/`suggest` config — it's a detached popup shown manually via `.show(inputNode)` from the input's `onTimedKeyPress` handler (a real, working debounced-keypress event despite sounding invented). Two non-obvious things here: (1) a bare `webix.ui({view:"suggest", ...})` has no `.parse()`/`.define("data", ...)`-style data methods of its own — you have to reach its internal list via `.getList()` and call `.clearAll()`/`.parse()` on *that*; and (2) `onItemClick` bound on the suggest view itself never fires — it has to be attached to `.getList()` too, otherwise selecting a suggestion just silently free-fills the input with the clicked value (Webix's built-in default) instead of running custom code.

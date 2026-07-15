@@ -1,26 +1,136 @@
 webix.ready(function () {
     // Derived from app.js's own URL rather than window.location, so this
     // keeps working unmodified no matter which folder the app is deployed
-    // into (mirrors the SCRIPT_NAME-based base path detection in index.php).
+    // into (mirrors the multi-tenant subdirectory deployments in the docs).
     var basePath = (function () {
         var script = document.currentScript || document.querySelector('script[src*="app.js"]');
         return script.src.replace(/app\.js(\?.*)?$/, "");
     })();
+
+    var MONTH_NAMES = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    ];
+
+    // The full listing, fetched once and kept in memory — every filter,
+    // grouping, and pagination step below runs against this array on the
+    // client, with no further server round-trips beyond raw image bytes.
+    var allImages = [];
+    var currentFilter = null; // null, or {year, month, day} (month/day optional)
 
     var state = {
         page: 1,
         limit: 24
     };
 
+    function fetchAllImages() {
+        var perRequest = 200; // matches config.php's max_page_size
+
+        function fetchPage(page, accumulated) {
+            return webix.ajax().get(basePath + "api/images", { page: page, limit: perRequest }).then(function (res) {
+                var data = res.json();
+                var items = accumulated.concat(data.items);
+                if (items.length < data.total) {
+                    return fetchPage(page + 1, items);
+                }
+                return items;
+            });
+        }
+
+        return fetchPage(1, []);
+    }
+
+    function withDateParts(item) {
+        var d = new Date(item.modified);
+        item._year = d.getFullYear();
+        item._month = d.getMonth() + 1;
+        item._day = d.getDate();
+        return item;
+    }
+
+    function filterFromTreeId(id) {
+        if (id === "all") {
+            return null;
+        }
+        var m = /^y-(\d+)(?:-m-(\d+)(?:-d-(\d+))?)?$/.exec(id);
+        if (!m) {
+            return null;
+        }
+        return {
+            year: parseInt(m[1], 10),
+            month: m[2] ? parseInt(m[2], 10) : null,
+            day: m[3] ? parseInt(m[3], 10) : null
+        };
+    }
+
+    function applyFilter(filter) {
+        if (!filter) {
+            return allImages;
+        }
+        return _.filter(allImages, function (item) {
+            if (item._year !== filter.year) {
+                return false;
+            }
+            if (filter.month !== null && item._month !== filter.month) {
+                return false;
+            }
+            if (filter.day !== null && item._day !== filter.day) {
+                return false;
+            }
+            return true;
+        });
+    }
+
+    function buildSidebarTree() {
+        var byYear = _.groupBy(allImages, "_year");
+        var years = _.sortBy(_.keys(byYear), Number).reverse();
+
+        var yearNodes = _.map(years, function (year) {
+            var yearItems = byYear[year];
+            var byMonth = _.groupBy(yearItems, "_month");
+            var months = _.sortBy(_.keys(byMonth), Number).reverse();
+
+            var monthNodes = _.map(months, function (month) {
+                var monthItems = byMonth[month];
+                var byDay = _.groupBy(monthItems, "_day");
+                var days = _.sortBy(_.keys(byDay), Number).reverse();
+
+                var dayNodes = _.map(days, function (day) {
+                    return {
+                        id: "y-" + year + "-m-" + month + "-d-" + day,
+                        value: day + " (" + byDay[day].length + ")"
+                    };
+                });
+
+                return {
+                    id: "y-" + year + "-m-" + month,
+                    value: MONTH_NAMES[month - 1] + " (" + monthItems.length + ")",
+                    data: dayNodes
+                };
+            });
+
+            return {
+                id: "y-" + year,
+                value: year + " (" + yearItems.length + ")",
+                data: monthNodes
+            };
+        });
+
+        return [
+            { id: "all", value: "All images (" + allImages.length + ")" }
+        ].concat(yearNodes);
+    }
+
     function loadPage(page) {
         state.page = page;
-        webix.ajax().get(basePath + "api/images", { page: state.page, limit: state.limit }).then(function (res) {
-            var data = res.json();
-            $$("gallery").clearAll();
-            $$("gallery").parse(data.items);
-            $$("pager").define("count", data.total);
-            $$("pager").refresh();
-        });
+        var filtered = applyFilter(currentFilter);
+        var offset = (page - 1) * state.limit;
+        var slice = filtered.slice(offset, offset + state.limit);
+
+        $$("gallery").clearAll();
+        $$("gallery").parse(slice);
+        $$("pager").define("count", filtered.length);
+        $$("pager").refresh();
     }
 
     function getDetailWindow() {
@@ -89,57 +199,144 @@ webix.ready(function () {
         );
     }
 
-    webix.ui({
-        rows: [
-            {
-                view: "toolbar",
-                height: 44,
-                elements: [
-                    { view: "label", label: "Image Explorer" }
-                ]
-            },
-            {
-                view: "dataview",
-                id: "gallery",
-                select: true,
-                scroll: "y",
-                type: { width: 180, height: 210 },
-                template: function (item) {
-                    return "<div class='thumb-wrap'>" +
-                        "<img class='thumb-img' src='" + basePath + "api/images/" + item.id + "/raw' loading='lazy'>" +
-                        "</div>" +
-                        "<div class='thumb-name'>" + webix.template.escape(item.name) + "</div>";
-                },
-                on: {
-                    onItemClick: function (id) {
-                        showDetail(this.getItem(id).id);
-                    }
-                }
-            },
-            {
-                view: "pager",
-                id: "pager",
-                height: 44,
-                size: state.limit,
-                master: false,
-                on: {
-                    onAfterPageChange: function (page) {
-                        loadPage(parseInt(page, 10) + 1);
-                    }
-                }
-            }
-        ]
-    });
-
-    webix.event(window, "resize", function () {
-        var win = $$("detailWindow");
-        if (win && win.isVisible()) {
-            win.define("width", Math.round(window.innerWidth * 0.7));
-            win.define("height", Math.round(window.innerHeight * 0.85));
-            win.resize();
-            centerWindow(win);
+    function runSearch(query) {
+        var suggest = $$("searchSuggest");
+        if (query.length < 3) {
+            suggest.hide();
+            return;
         }
-    });
 
-    loadPage(1);
+        var needle = query.toLowerCase();
+        var matches = _.filter(allImages, function (item) {
+            return item.name.toLowerCase().indexOf(needle) !== -1;
+        }).slice(0, 20);
+
+        if (!matches.length) {
+            suggest.hide();
+            return;
+        }
+
+        var list = suggest.getList();
+        list.clearAll();
+        list.parse(_.map(matches, function (item) {
+            return { id: item.id, value: item.name };
+        }));
+        suggest.show($$("searchBox").getInputNode());
+    }
+
+    function buildApp() {
+        webix.ui({
+            rows: [
+                {
+                    view: "toolbar",
+                    height: 44,
+                    elements: [
+                        { view: "label", label: "Image Explorer" },
+                        {
+                            view: "text",
+                            id: "searchBox",
+                            width: 260,
+                            placeholder: "Search filename (min 3 chars)...",
+                            on: {
+                                onTimedKeyPress: function () {
+                                    runSearch(this.getValue());
+                                }
+                            }
+                        }
+                    ]
+                },
+                {
+                    cols: [
+                        {
+                            view: "tree",
+                            id: "sidebarTree",
+                            width: 240,
+                            select: true,
+                            scroll: "y",
+                            data: buildSidebarTree(),
+                            on: {
+                                onSelectChange: function () {
+                                    currentFilter = filterFromTreeId(this.getSelectedId());
+                                    loadPage(1);
+                                }
+                            }
+                        },
+                        {
+                            rows: [
+                                {
+                                    view: "dataview",
+                                    id: "gallery",
+                                    select: true,
+                                    scroll: "y",
+                                    type: { width: 180, height: 210 },
+                                    template: function (item) {
+                                        return "<div class='thumb-wrap'>" +
+                                            "<img class='thumb-img' src='" + basePath + "api/images/" + item.id + "/raw' loading='lazy'>" +
+                                            "</div>" +
+                                            "<div class='thumb-name'>" + webix.template.escape(item.name) + "</div>";
+                                    },
+                                    on: {
+                                        onItemClick: function (id) {
+                                            showDetail(this.getItem(id).id);
+                                        }
+                                    }
+                                },
+                                {
+                                    view: "pager",
+                                    id: "pager",
+                                    height: 44,
+                                    size: state.limit,
+                                    master: false,
+                                    on: {
+                                        onAfterPageChange: function (page) {
+                                            loadPage(parseInt(page, 10) + 1);
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        });
+
+        var searchSuggest = webix.ui({
+            view: "suggest",
+            id: "searchSuggest",
+            data: []
+        });
+
+        // The suggest view's own onItemClick doesn't fire selection events —
+        // its internal list does, and by default selecting an item just
+        // writes the value into the bound input. Attaching here instead
+        // lets us open the detail view directly on selection.
+        searchSuggest.getList().attachEvent("onItemClick", function (id) {
+            searchSuggest.hide();
+            $$("searchBox").setValue("");
+            showDetail(id);
+        });
+
+        webix.event(window, "resize", function () {
+            var win = $$("detailWindow");
+            if (win && win.isVisible()) {
+                win.define("width", Math.round(window.innerWidth * 0.7));
+                win.define("height", Math.round(window.innerHeight * 0.85));
+                win.resize();
+                centerWindow(win);
+            }
+        });
+
+        loadPage(1);
+    }
+
+    fetchAllImages().then(function (items) {
+        allImages = _.map(items, withDateParts);
+
+        var loadingScreen = document.getElementById("loadingScreen");
+        if (loadingScreen) {
+            loadingScreen.parentNode.removeChild(loadingScreen);
+        }
+
+        buildApp();
+    });
 });
