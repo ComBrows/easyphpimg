@@ -23,31 +23,77 @@ webix.ready(function () {
         });
     }
 
+    function getDetailWindow() {
+        var win = $$("detailWindow");
+        if (win) {
+            return win;
+        }
+
+        return webix.ui({
+            view: "window",
+            id: "detailWindow",
+            modal: true,
+            width: Math.round(window.innerWidth * 0.7),
+            height: Math.round(window.innerHeight * 0.85),
+            head: {
+                cols: [
+                    { view: "label", id: "detailTitle", label: "" },
+                    {
+                        view: "icon",
+                        icon: "wxi-close",
+                        click: function () {
+                            $$("detailWindow").hide();
+                        }
+                    }
+                ]
+            },
+            body: {
+                rows: [
+                    { view: "template", id: "detailImageArea", template: "", gravity: 4 },
+                    { view: "template", id: "detailMetaArea", template: "", gravity: 1 }
+                ]
+            }
+        });
+    }
+
     function showDetail(id) {
         webix.ajax().get(basePath + "api/images/" + id).then(function (res) {
             var info = res.json();
-            webix.modalbox({
-                title: webix.template.escape(info.name),
-                width: "900",
-                text: "<div class='detail-modal'>" +
-                    "<img src='" + basePath + "api/images/" + id + "/raw' class='detail-image'>" +
-                    "<div class='detail-meta'>" +
+            var win = getDetailWindow();
+
+            $$("detailTitle").setValue(webix.template.escape(info.name));
+            $$("detailImageArea").setHTML(
+                "<div class='detail-window-image'>" +
+                    "<img src='" + basePath + "api/images/" + id + "/raw'>" +
+                    "</div>"
+            );
+            $$("detailMetaArea").setHTML(
+                "<div class='detail-window-meta'>" +
                     "<div><b>Size:</b> " + info.size_human + "</div>" +
                     "<div><b>Dimensions:</b> " + (info.width || "?") + " x " + (info.height || "?") + "</div>" +
                     "<div><b>Type:</b> " + info.mime + "</div>" +
                     "<div><b>Created:</b> " + info.created + "</div>" +
                     "<div><b>Modified:</b> " + info.modified + "</div>" +
-                    "</div>" +
-                    "</div>",
-                buttons: ["Close"]
-            });
+                    "</div>"
+            );
+
+            win.show();
+            centerWindow(win);
         });
+    }
+
+    function centerWindow(win) {
+        win.setPosition(
+            Math.round((window.innerWidth - win.$width) / 2),
+            Math.round((window.innerHeight - win.$height) / 2)
+        );
     }
 
     webix.ui({
         rows: [
             {
                 view: "toolbar",
+                height: 44,
                 elements: [
                     { view: "label", label: "Image Explorer" }
                 ]
@@ -56,6 +102,7 @@ webix.ready(function () {
                 view: "dataview",
                 id: "gallery",
                 select: true,
+                scroll: "y",
                 type: { width: 180, height: 210 },
                 template: function (item) {
                     return "<div class='thumb-wrap'>" +
@@ -72,6 +119,7 @@ webix.ready(function () {
             {
                 view: "pager",
                 id: "pager",
+                height: 44,
                 size: state.limit,
                 master: false,
                 on: {
@@ -81,6 +129,16 @@ webix.ready(function () {
                 }
             }
         ]
+    });
+
+    webix.event(window, "resize", function () {
+        var win = $$("detailWindow");
+        if (win && win.isVisible()) {
+            win.define("width", Math.round(window.innerWidth * 0.7));
+            win.define("height", Math.round(window.innerHeight * 0.85));
+            win.resize();
+            centerWindow(win);
+        }
     });
 
     loadPage(1);

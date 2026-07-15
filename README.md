@@ -40,13 +40,15 @@ Since each deployment is just this folder with its own `config.php`, serving sev
 /var/www/html/custb/   (full copy of this project, image_dir = /img/custb)
 ```
 
-Each copy is self-contained and works as a subdirectory of the same docroot without any extra web server config — the front controller detects its own base path from `SCRIPT_NAME`.
+Each copy is self-contained and works as a subdirectory of the same docroot without any extra web server config — `index.php` matches routes on the literal `/api/` marker in the request path rather than a computed base path, so it works unmodified at any mount depth.
 
 ### Local dev
 
 ```
-php -S 0.0.0.0:8080
+php -S 0.0.0.0:8080 router.php
 ```
+
+`router.php` is only needed for PHP's built-in dev server — without it, any request whose last path segment looks like a filename (e.g. `/api/images/file/photo.jpg`) 404s before ever reaching `index.php`. Apache/nginx don't have this problem since they route via `.htaccess`/`try_files` instead.
 
 If you don't have PHP installed locally, run the same command inside a `php:7.0-cli` Docker container with the project mounted in.
 
@@ -67,8 +69,9 @@ php bin/rebuild-cache.php
 | GET | `/api/images?page=&limit=` | Paged listing, sorted by name |
 | GET | `/api/images/{id}` | Metadata: size, mime, width/height, created/modified |
 | GET | `/api/images/{id}/raw` | Streams the raw file bytes (ETag / 304 support) |
+| GET | `/api/images/file/{filename}` | Metadata + the file's contents inline as base64 (URL-encode the filename) |
 
-Each image's `id` is a hash of its filename (`substr(md5($filename), 0, 12)`), so ids stay stable across cache rebuilds.
+Each image's `id` is a hash of its filename (`substr(md5($filename), 0, 12)`), so ids stay stable across cache rebuilds. The `file/{filename}` endpoint loads the whole file into memory to base64-encode it — fine for occasional lookups, but prefer `/{id}/raw` for the gallery itself.
 
 ## Notes
 

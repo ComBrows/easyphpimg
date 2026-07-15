@@ -51,15 +51,20 @@ class Cache
         ));
 
         $dir = dirname($this->cacheFile);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0775, true);
+        if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+            throw new \RuntimeException('Cache directory does not exist and could not be created: ' . $dir);
         }
 
         // Write to a temp file and rename so concurrent readers never see a
         // partially-written cache file.
         $tmpFile = $this->cacheFile . '.' . uniqid('', true) . '.tmp';
-        file_put_contents($tmpFile, $payload, LOCK_EX);
-        rename($tmpFile, $this->cacheFile);
+        if (file_put_contents($tmpFile, $payload, LOCK_EX) === false) {
+            throw new \RuntimeException('Unable to write cache file — check that ' . $dir . ' is writable by the web server user: ' . $tmpFile);
+        }
+        if (!rename($tmpFile, $this->cacheFile)) {
+            @unlink($tmpFile);
+            throw new \RuntimeException('Unable to move cache file into place: ' . $this->cacheFile);
+        }
 
         return $items;
     }
@@ -69,5 +74,16 @@ class Cache
         $items = $this->items();
 
         return isset($items[$id]) ? $items[$id] : null;
+    }
+
+    public function findByName($name)
+    {
+        foreach ($this->items() as $item) {
+            if ($item['name'] === $name) {
+                return $item;
+            }
+        }
+
+        return null;
     }
 }

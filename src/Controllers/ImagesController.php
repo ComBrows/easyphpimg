@@ -64,6 +64,27 @@ class ImagesController
         $this->json($this->toDetail($item));
     }
 
+    /** GET /api/images/file/{filename} */
+    public function byFilename($filename)
+    {
+        $item = $this->cache->findByName($filename);
+        if ($item === null) {
+            $this->json(array('error' => 'Not found'), 404);
+            return;
+        }
+
+        $path = $this->imageDir . '/' . $item['name'];
+        if (!is_file($path)) {
+            $this->json(array('error' => 'File missing on disk'), 410);
+            return;
+        }
+
+        $detail = $this->toDetail($item);
+        $detail['base64'] = base64_encode(file_get_contents($path));
+
+        $this->json($detail);
+    }
+
     /** GET /api/images/{id}/raw */
     public function raw($id)
     {
