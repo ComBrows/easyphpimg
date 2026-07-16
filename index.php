@@ -53,8 +53,6 @@ try {
         $controller->byFilename(rawurldecode($m[1]));
     } elseif (preg_match('#^/api/images/([a-f0-9]{12})/raw$#', $route, $m)) {
         $controller->raw($m[1]);
-    } elseif (preg_match('#^/api/images/([a-f0-9]{12})$#', $route, $m)) {
-        $controller->show($m[1]);
     } elseif ($route === '/api/images/all') {
         $controller->all();
     } elseif ($route === '/api/images/stats') {

@@ -92,19 +92,11 @@ class ImagesController
         ));
     }
 
-    /** GET /api/images/{id} */
-    public function show($id)
-    {
-        $item = $this->cache->find($id);
-        if ($item === null) {
-            $this->json(array('error' => 'Not found'), 404);
-            return;
-        }
-
-        $this->json($this->toDetail($item));
-    }
-
-    /** GET /api/images/file/{filename} */
+    /**
+     * GET /api/images/file/{filename} — no getimagesize()/width/height here
+     * either (see toSummary()'s doc comment): dimensions are the client's
+     * job via ExifReader, working off the same base64 bytes returned below.
+     */
     public function byFilename($filename)
     {
         $item = $this->cache->findByName($filename);
@@ -119,7 +111,9 @@ class ImagesController
             return;
         }
 
-        $detail = $this->toDetail($item);
+        $detail = $this->toSummary($item);
+        $detail['size_human'] = $this->humanSize($item['size']);
+        $detail['mime'] = $this->mimeType($path, $item['extension']);
         $detail['base64'] = base64_encode(file_get_contents($path));
 
         $this->json($detail);
@@ -160,6 +154,13 @@ class ImagesController
         readfile($path);
     }
 
+    /**
+     * Deliberately stat-only — no getimagesize()/finfo here. Dimensions,
+     * camera, and date-taken are read client-side from the raw bytes via
+     * ExifReader instead; a real 10MB+ file with an unusual/malformed
+     * header can make getimagesize() balloon PHP's memory use enough to
+     * 500, which is exactly the failure this shape avoids.
+     */
     private function toSummary(array $item)
     {
         return array(
@@ -167,36 +168,6 @@ class ImagesController
             'name' => $item['name'],
             'extension' => $item['extension'],
             'size' => $item['size'],
-            // NOTE: PHP has no portable "birth time" API on Linux — ctime
-            // here is the inode change time, the closest available proxy.
-            'created' => date('c', $item['ctime']),
-            'modified' => date('c', $item['mtime']),
-        );
-    }
-
-    private function toDetail(array $item)
-    {
-        $path = $this->imageDir . '/' . $item['name'];
-        $width = null;
-        $height = null;
-
-        if (is_file($path)) {
-            $info = @getimagesize($path);
-            if ($info !== false) {
-                $width = $info[0];
-                $height = $info[1];
-            }
-        }
-
-        return array(
-            'id' => $item['id'],
-            'name' => $item['name'],
-            'extension' => $item['extension'],
-            'mime' => $this->mimeType($path, $item['extension']),
-            'size' => $item['size'],
-            'size_human' => $this->humanSize($item['size']),
-            'width' => $width,
-            'height' => $height,
             // NOTE: PHP has no portable "birth time" API on Linux — ctime
             // here is the inode change time, the closest available proxy.
             'created' => date('c', $item['ctime']),

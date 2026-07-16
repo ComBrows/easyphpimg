@@ -71,11 +71,10 @@ php bin/rebuild-cache.php
 | GET | `/api/images/all` | Entire listing in one (gzip-compressed) response — what the front end loads at startup |
 | GET | `/api/images/stats` | Cheap count/size/cache-date summary, no items — fetched first for the loading screen |
 | GET | `/api/images?page=&limit=` | Paged listing, sorted by name (kept for compatibility; unused by the front end's initial load) |
-| GET | `/api/images/{id}` | Metadata: size, mime, width/height, created/modified. Kept for direct API use; the front end computes this client-side instead (see Front end features) |
 | GET | `/api/images/{id}/raw` | Streams the raw file bytes (ETag / 304 support) |
-| GET | `/api/images/file/{filename}` | Metadata + the file's contents inline as base64 (URL-encode the filename) |
+| GET | `/api/images/file/{filename}` | Size/mime/created/modified + the file's contents inline as base64 (URL-encode the filename) — no dimensions; that's an ExifReader job on whatever consumes the base64 |
 
-Each image's `id` is a hash of its filename (`substr(md5($filename), 0, 12)`), so ids stay stable across cache rebuilds. The `file/{filename}` endpoint loads the whole file into memory to base64-encode it — fine for occasional lookups, but prefer `/{id}/raw` for the gallery itself. Every JSON response is gzip-compressed at the PHP layer when the web server isn't already doing it — except `/{id}/raw`, which streams exact file bytes and would be corrupted by an extra compression layer.
+Each image's `id` is a hash of its filename (`substr(md5($filename), 0, 12)`), so ids stay stable across cache rebuilds. The `file/{filename}` endpoint loads the whole file into memory to base64-encode it — fine for occasional lookups, but prefer `/{id}/raw` for the gallery itself. Every JSON response is gzip-compressed at the PHP layer when the web server isn't already doing it — except `/{id}/raw`, which streams exact file bytes and would be corrupted by an extra compression layer. No endpoint runs `getimagesize()` — width/height/camera/date-taken are read client-side via ExifReader instead, since a large or malformed file can make `getimagesize()` balloon PHP's memory use enough to fail with a 500.
 
 ## Front end features
 
