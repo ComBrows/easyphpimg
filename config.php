@@ -17,4 +17,10 @@ return array(
     // Default / max items per page for GET /api/images.
     'default_page_size' => 24,
     'max_page_size' => 200,
+
+    // How long (seconds) a cache is trusted before its next read triggers a
+    // cheap re-scan to check whether the folder actually changed. The
+    // directory isn't expected to change daily, and up to 24h of staleness
+    // is acceptable, so this avoids re-scanning on every request.
+    'cache_ttl' => 86400,
 );

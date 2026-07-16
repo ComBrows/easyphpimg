@@ -52,6 +52,46 @@ class ImagesController
         ));
     }
 
+    /**
+     * GET /api/images/all — the entire listing in one response, so the
+     * front end can load everything with a single (gzip-compressed) request
+     * instead of paginating through hundreds of them at scale.
+     */
+    public function all()
+    {
+        $items = array_values($this->cache->items());
+        usort($items, function ($a, $b) {
+            return strcasecmp($a['name'], $b['name']);
+        });
+
+        $stats = $this->cache->stats();
+
+        $this->json(array(
+            'generated_at' => date('c', $stats['generated_at']),
+            'count' => count($items),
+            'total_size' => $stats['total_size'],
+            'total_size_human' => $this->humanSize($stats['total_size']),
+            'items' => array_map(array($this, 'toSummary'), $items),
+        ));
+    }
+
+    /**
+     * GET /api/images/stats — cheap count/size/cache-age summary, fetched
+     * first so the loading screen can show it before the full listing
+     * (which is the larger, slower request) arrives.
+     */
+    public function stats()
+    {
+        $stats = $this->cache->stats();
+
+        $this->json(array(
+            'count' => $stats['count'],
+            'total_size' => $stats['total_size'],
+            'total_size_human' => $this->humanSize($stats['total_size']),
+            'generated_at' => date('c', $stats['generated_at']),
+        ));
+    }
+
     /** GET /api/images/{id} */
     public function show($id)
     {

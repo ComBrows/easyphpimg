@@ -23,21 +23,84 @@ webix.ready(function () {
         limit: 24
     };
 
-    function fetchAllImages() {
-        var perRequest = 200; // matches config.php's max_page_size
+    function fetchStats() {
+        return webix.ajax().get(basePath + "api/images/stats").then(function (res) {
+            return res.json();
+        });
+    }
 
-        function fetchPage(page, accumulated) {
-            return webix.ajax().get(basePath + "api/images", { page: page, limit: perRequest }).then(function (res) {
-                var data = res.json();
-                var items = accumulated.concat(data.items);
-                if (items.length < data.total) {
-                    return fetchPage(page + 1, items);
-                }
-                return items;
-            });
+    function formatBytes(bytes) {
+        var units = ["B", "KB", "MB", "GB", "TB"];
+        var value = bytes;
+        var i = 0;
+        while (value >= 1024 && i < units.length - 1) {
+            value /= 1024;
+            i++;
         }
+        return value.toFixed(i > 0 ? 2 : 0) + " " + units[i];
+    }
 
-        return fetchPage(1, []);
+    function setLoadingProgress(fraction) {
+        var bar = document.getElementById("loadingProgressBar");
+        if (bar) {
+            bar.style.width = (Math.min(1, Math.max(0, fraction)) * 100) + "%";
+        }
+    }
+
+    function showLoadingStats(stats) {
+        var sizeEl = document.getElementById("loadingSize");
+        var countEl = document.getElementById("loadingCount");
+        var dateEl = document.getElementById("loadingDate");
+        if (sizeEl) {
+            sizeEl.textContent = formatBytes(stats.total_size);
+        }
+        if (countEl) {
+            countEl.textContent = stats.count.toLocaleString() + " files";
+        }
+        if (dateEl) {
+            dateEl.textContent = stats.generated_at.slice(0, 10);
+        }
+    }
+
+    function showLoadingError(message) {
+        var box = document.querySelector(".loading-box");
+        if (box) {
+            box.innerHTML = "<div class='loading-title'>Failed to load: " +
+                webix.template.escape(message) + "</div>";
+        }
+    }
+
+    // A single request for the whole listing (gzip-compressed server-side),
+    // instead of paginating through hundreds of requests at 30k+ files —
+    // plain XMLHttpRequest so we get byte-level onprogress for the loading
+    // bar, which webix.ajax()/fetch() don't expose.
+    function fetchAllImages(stats) {
+        return new Promise(function (resolve, reject) {
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", basePath + "api/images/all", true);
+
+            xhr.onprogress = function (event) {
+                var total = event.lengthComputable ? event.total : (stats && stats.total_size);
+                if (total) {
+                    setLoadingProgress(event.loaded / total);
+                }
+            };
+
+            xhr.onload = function () {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    setLoadingProgress(1);
+                    resolve(JSON.parse(xhr.responseText).items);
+                } else {
+                    reject(new Error("HTTP " + xhr.status));
+                }
+            };
+
+            xhr.onerror = function () {
+                reject(new Error("Network error while loading image list"));
+            };
+
+            xhr.send();
+        });
     }
 
     function withDateParts(item) {
@@ -329,7 +392,10 @@ webix.ready(function () {
         loadPage(1);
     }
 
-    fetchAllImages().then(function (items) {
+    fetchStats().then(function (stats) {
+        showLoadingStats(stats);
+        return fetchAllImages(stats);
+    }).then(function (items) {
         allImages = _.map(items, withDateParts);
 
         var loadingScreen = document.getElementById("loadingScreen");
@@ -338,5 +404,7 @@ webix.ready(function () {
         }
 
         buildApp();
+    }).catch(function (err) {
+        showLoadingError(err.message);
     });
 });

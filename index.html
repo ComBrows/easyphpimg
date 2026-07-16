@@ -9,7 +9,19 @@
     <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<div id="loadingScreen" class="loading-text">Loading&hellip;</div>
+<div id="loadingScreen" class="loading-screen">
+    <div class="loading-box">
+        <div class="loading-title">Please wait, loading folder&hellip;</div>
+        <div class="loading-stats">
+            <div>Folder size: <span id="loadingSize">&mdash;</span></div>
+            <div>Files count: <span id="loadingCount">&mdash;</span></div>
+            <div>Cache date: <span id="loadingDate">&mdash;</span></div>
+        </div>
+        <div class="loading-progress-track">
+            <div id="loadingProgressBar" class="loading-progress-bar"></div>
+        </div>
+    </div>
+</div>
 <script src="app.js"></script>
 </body>
 </html>

@@ -64,15 +64,49 @@ html, body {
     line-height: 1.6;
 }
 
-.loading-text {
+.loading-screen {
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100vh;
     font-family: sans-serif;
-    font-size: 24px;
-    color: #555;
+    color: #333;
+}
+
+.loading-box {
+    width: 320px;
+    padding: 24px 28px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+    background: #fff;
+}
+
+.loading-title {
+    font-size: 17px;
+    margin-bottom: 16px;
     animation: loading-blink 1s step-start infinite;
+}
+
+.loading-stats {
+    font-size: 13px;
+    line-height: 1.8;
+    color: #555;
+    margin-bottom: 16px;
+}
+
+.loading-progress-track {
+    height: 10px;
+    border-radius: 5px;
+    background: #eee;
+    overflow: hidden;
+}
+
+.loading-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: #4a90d9;
+    transition: width 0.15s ease-out;
 }
 
 @keyframes loading-blink {
