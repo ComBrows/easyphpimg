@@ -229,17 +229,43 @@ webix.ready(function () {
         });
     }
 
+    // Bumped on every showDetail() call so a slow metadata response for a
+    // previously-opened image can't overwrite the window after the user has
+    // already clicked through to a different one.
+    var detailToken = 0;
+
     function showDetail(id) {
+        var token = ++detailToken;
+        var win = getDetailWindow();
+        var localItem = _.find(allImages, { id: id });
+
+        $$("detailTitle").setValue(webix.template.escape(localItem ? localItem.name : "Loading images..."));
+        // The <img> is rendered (hidden) right away rather than pre-loaded
+        // via a detached `new Image()` — a detached Image's onload never
+        // fired reliably here, while a real DOM-attached <img> (as already
+        // used for gallery thumbnails) does. Its own onload/onerror swaps
+        // the "Loading images..." placeholder for the image, or a failure
+        // message, once the request settles.
+        $$("detailImageArea").setHTML(
+            "<div class='detail-window-image'>" +
+                "<div class='detail-placeholder'>Loading images...</div>" +
+                "<img class='detail-image-pending' src='" + basePath + "api/images/" + id + "/raw' " +
+                    "onload=\"this.previousElementSibling.style.display='none'; this.classList.remove('detail-image-pending');\" " +
+                    "onerror=\"this.previousElementSibling.textContent='Image unavailable';\">" +
+                "</div>"
+        );
+        $$("detailMetaArea").setHTML("<div class='detail-window-meta detail-placeholder'>Loading images...</div>");
+
+        win.show();
+        centerWindow(win);
+
         webix.ajax().get(basePath + "api/images/" + id).then(function (res) {
+            if (token !== detailToken) {
+                return;
+            }
             var info = res.json();
-            var win = getDetailWindow();
 
             $$("detailTitle").setValue(webix.template.escape(info.name));
-            $$("detailImageArea").setHTML(
-                "<div class='detail-window-image'>" +
-                    "<img src='" + basePath + "api/images/" + id + "/raw'>" +
-                    "</div>"
-            );
             $$("detailMetaArea").setHTML(
                 "<div class='detail-window-meta'>" +
                     "<div><b>Size:</b> " + info.size_human + "</div>" +
@@ -249,9 +275,6 @@ webix.ready(function () {
                     "<div><b>Modified:</b> " + info.modified + "</div>" +
                     "</div>"
             );
-
-            win.show();
-            centerWindow(win);
         });
     }
 
