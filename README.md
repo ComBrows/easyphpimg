@@ -71,7 +71,7 @@ php bin/rebuild-cache.php
 | GET | `/api/images/all` | Entire listing in one (gzip-compressed) response — what the front end loads at startup |
 | GET | `/api/images/stats` | Cheap count/size/cache-date summary, no items — fetched first for the loading screen |
 | GET | `/api/images?page=&limit=` | Paged listing, sorted by name (kept for compatibility; unused by the front end's initial load) |
-| GET | `/api/images/{id}` | Metadata: size, mime, width/height, created/modified |
+| GET | `/api/images/{id}` | Metadata: size, mime, width/height, created/modified. Kept for direct API use; the front end computes this client-side instead (see Front end features) |
 | GET | `/api/images/{id}/raw` | Streams the raw file bytes (ETag / 304 support) |
 | GET | `/api/images/file/{filename}` | Metadata + the file's contents inline as base64 (URL-encode the filename) |
 
@@ -82,7 +82,7 @@ Each image's `id` is a hash of its filename (`substr(md5($filename), 0, 12)`), s
 - **Loading screen**: shows folder size, file count, and cache date (from `/api/images/stats`) plus a progress bar tracking the subsequent full-listing download — nothing else can render until it completes, since grouping, search, and pagination all need the complete list first.
 - **Sidebar**: images grouped by year → month → day (from each file's `modified` date), click any node to filter the gallery; "All images" clears the filter.
 - **Search**: type 3+ characters in the toolbar search box for filename suggestions; selecting one opens that image's detail view directly.
-- **Detail view**: click any thumbnail for a centered window with the image on top and metadata below.
+- **Detail view**: click any thumbnail for a centered window with the image on top and metadata below. The image is fetched once and its bytes are reused for both display and metadata extraction — dimensions, and camera/date-taken when present, are read client-side via [ExifReader](https://www.jsdelivr.com/package/npm/exifreader), with no separate metadata request to the server.
 
 ## Notes
 

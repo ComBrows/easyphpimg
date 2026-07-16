@@ -48,10 +48,6 @@ html, body {
     object-fit: contain;
 }
 
-.detail-window-image img.detail-image-pending {
-    display: none;
-}
-
 .detail-placeholder {
     color: #888;
     font-style: italic;

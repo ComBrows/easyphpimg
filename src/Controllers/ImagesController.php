@@ -167,6 +167,9 @@ class ImagesController
             'name' => $item['name'],
             'extension' => $item['extension'],
             'size' => $item['size'],
+            // NOTE: PHP has no portable "birth time" API on Linux — ctime
+            // here is the inode change time, the closest available proxy.
+            'created' => date('c', $item['ctime']),
             'modified' => date('c', $item['mtime']),
         );
     }

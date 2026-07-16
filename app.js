@@ -196,6 +196,29 @@ webix.ready(function () {
         $$("pager").refresh();
     }
 
+    var MIME_TYPES = {
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        png: "image/png",
+        gif: "image/gif",
+        webp: "image/webp",
+        bmp: "image/bmp"
+    };
+
+    // The single raw-bytes fetch backs both the <img> (via an object URL)
+    // and the ExifReader parse below, so metadata costs nothing beyond the
+    // image download every gallery click already needed — no more separate
+    // /api/images/{id} round trip. The previous object URL is revoked before
+    // creating the next one so repeatedly opening images doesn't leak memory.
+    var detailObjectUrl = null;
+
+    function revokeDetailObjectUrl() {
+        if (detailObjectUrl) {
+            URL.revokeObjectURL(detailObjectUrl);
+            detailObjectUrl = null;
+        }
+    }
+
     function getDetailWindow() {
         var win = $$("detailWindow");
         if (win) {
@@ -215,6 +238,7 @@ webix.ready(function () {
                         view: "icon",
                         icon: "wxi-close",
                         click: function () {
+                            revokeDetailObjectUrl();
                             $$("detailWindow").hide();
                         }
                     }
@@ -229,9 +253,73 @@ webix.ready(function () {
         });
     }
 
-    // Bumped on every showDetail() call so a slow metadata response for a
-    // previously-opened image can't overwrite the window after the user has
-    // already clicked through to a different one.
+    // ExifReader understands JPEG/TIFF/PNG/HEIC/WebP structure, not just
+    // EXIF proper, so ImageWidth/ImageHeight come back for plain PNGs too —
+    // but any format/corruption it doesn't recognize throws, so dimensions
+    // and the optional camera/date-taken fields are only shown when present.
+    function extractClientMetadata(buffer, localItem) {
+        var width = null;
+        var height = null;
+        var dateTaken = null;
+        var camera = null;
+
+        try {
+            // Tag names come back with spaces (e.g. "Image Width", not
+            // "ImageWidth") in this ExifReader version — verified directly
+            // against its output rather than assumed from the docs.
+            var tags = ExifReader.load(buffer);
+            if (tags["Image Width"]) {
+                width = tags["Image Width"].value;
+            }
+            if (tags["Image Height"]) {
+                height = tags["Image Height"].value;
+            }
+            if (tags.DateTimeOriginal) {
+                dateTaken = tags.DateTimeOriginal.description;
+            }
+            if (tags.Make || tags.Model) {
+                camera = [
+                    tags.Make ? tags.Make.description : null,
+                    tags.Model ? tags.Model.description : null
+                ].filter(Boolean).join(" ");
+            }
+        } catch (e) {
+            // Not a format/structure ExifReader can parse — dimensions and
+            // camera info just won't be shown, rest of the metadata still is.
+        }
+
+        return {
+            size_human: formatBytes(localItem.size),
+            mime: MIME_TYPES[localItem.extension] || "application/octet-stream",
+            width: width,
+            height: height,
+            created: localItem.created,
+            modified: localItem.modified,
+            dateTaken: dateTaken,
+            camera: camera
+        };
+    }
+
+    function renderDetailMeta(meta) {
+        var rows = [
+            "<div><b>Size:</b> " + meta.size_human + "</div>",
+            "<div><b>Dimensions:</b> " + (meta.width || "?") + " x " + (meta.height || "?") + "</div>",
+            "<div><b>Type:</b> " + meta.mime + "</div>",
+            "<div><b>Created:</b> " + meta.created + "</div>",
+            "<div><b>Modified:</b> " + meta.modified + "</div>"
+        ];
+        if (meta.camera) {
+            rows.push("<div><b>Camera:</b> " + webix.template.escape(meta.camera) + "</div>");
+        }
+        if (meta.dateTaken) {
+            rows.push("<div><b>Date taken:</b> " + webix.template.escape(meta.dateTaken) + "</div>");
+        }
+        return "<div class='detail-window-meta'>" + rows.join("") + "</div>";
+    }
+
+    // Bumped on every showDetail() call so a slow fetch for a previously
+    // opened image can't overwrite the window after the user has already
+    // clicked through to a different one.
     var detailToken = 0;
 
     function showDetail(id) {
@@ -240,41 +328,40 @@ webix.ready(function () {
         var localItem = _.find(allImages, { id: id });
 
         $$("detailTitle").setValue(webix.template.escape(localItem ? localItem.name : "Loading images..."));
-        // The <img> is rendered (hidden) right away rather than pre-loaded
-        // via a detached `new Image()` — a detached Image's onload never
-        // fired reliably here, while a real DOM-attached <img> (as already
-        // used for gallery thumbnails) does. Its own onload/onerror swaps
-        // the "Loading images..." placeholder for the image, or a failure
-        // message, once the request settles.
-        $$("detailImageArea").setHTML(
-            "<div class='detail-window-image'>" +
-                "<div class='detail-placeholder'>Loading images...</div>" +
-                "<img class='detail-image-pending' src='" + basePath + "api/images/" + id + "/raw' " +
-                    "onload=\"this.previousElementSibling.style.display='none'; this.classList.remove('detail-image-pending');\" " +
-                    "onerror=\"this.previousElementSibling.textContent='Image unavailable';\">" +
-                "</div>"
-        );
+        $$("detailImageArea").setHTML("<div class='detail-window-image detail-placeholder'>Loading images...</div>");
         $$("detailMetaArea").setHTML("<div class='detail-window-meta detail-placeholder'>Loading images...</div>");
 
         win.show();
         centerWindow(win);
 
-        webix.ajax().get(basePath + "api/images/" + id).then(function (res) {
+        fetch(basePath + "api/images/" + id + "/raw").then(function (res) {
+            if (!res.ok) {
+                throw new Error("HTTP " + res.status);
+            }
+            return res.arrayBuffer();
+        }).then(function (buffer) {
             if (token !== detailToken) {
                 return;
             }
-            var info = res.json();
 
-            $$("detailTitle").setValue(webix.template.escape(info.name));
-            $$("detailMetaArea").setHTML(
-                "<div class='detail-window-meta'>" +
-                    "<div><b>Size:</b> " + info.size_human + "</div>" +
-                    "<div><b>Dimensions:</b> " + (info.width || "?") + " x " + (info.height || "?") + "</div>" +
-                    "<div><b>Type:</b> " + info.mime + "</div>" +
-                    "<div><b>Created:</b> " + info.created + "</div>" +
-                    "<div><b>Modified:</b> " + info.modified + "</div>" +
-                    "</div>"
+            revokeDetailObjectUrl();
+            detailObjectUrl = URL.createObjectURL(new Blob([buffer]));
+
+            $$("detailImageArea").setHTML(
+                "<div class='detail-window-image'><img src='" + detailObjectUrl + "'></div>"
             );
+            $$("detailMetaArea").setHTML(renderDetailMeta(extractClientMetadata(buffer, localItem)));
+        }).catch(function () {
+            if (token !== detailToken) {
+                return;
+            }
+            $$("detailImageArea").setHTML("<div class='detail-window-image detail-placeholder'>Image unavailable</div>");
+            $$("detailMetaArea").setHTML(renderDetailMeta({
+                size_human: formatBytes(localItem.size),
+                mime: MIME_TYPES[localItem.extension] || "application/octet-stream",
+                created: localItem.created,
+                modified: localItem.modified
+            }));
         });
     }
 
